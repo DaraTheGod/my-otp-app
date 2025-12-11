@@ -11,6 +11,22 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+// Normalize phone number to +855 format
+function normalizePhone(phone: string) {
+  if (!phone) return '';
+  let cleaned = phone.replace(/[\s\-\(\)\+]/g, '');
+
+  if (cleaned.startsWith('0') && cleaned.length === 10) {
+    cleaned = '+855' + cleaned.slice(1);
+  } else if (cleaned.startsWith('855') && cleaned.length === 12) {
+    cleaned = '+' + cleaned;
+  } else if (!cleaned.startsWith('+')) {
+    cleaned = '+' + cleaned; // fallback
+  }
+
+  return cleaned;
+}
+
 bot.start(async (ctx) => {
   const session_id = ctx.startPayload;
 
@@ -30,10 +46,12 @@ bot.start(async (ctx) => {
     return ctx.reply('Invalid or expired session. Please try again on the website.');
   }
 
-  const telegramPhone = (ctx.from as any)?.phone_number;
+  const telegramPhoneRaw = (ctx.from as any)?.phone_number;
+  const telegramPhone = normalizePhone(telegramPhoneRaw);
+  const sessionPhone = normalizePhone(session.phone_number);
 
   if (telegramPhone) {
-    if (telegramPhone === session.phone_number) {
+    if (telegramPhone === sessionPhone) {
       await ctx.reply(`
 ✅ Phone number verified!
 
@@ -47,19 +65,19 @@ You can return to the website — it will redirect automatically.
         .update({ 
           status: 'success',
           verified: true,
-          chat_id: ctx.chat.id   // ← matches your local bot.ts
+          chat_id: ctx.chat.id
         })
         .eq('id', session.id);
 
       await supabase.from('users').upsert({
-        phone_number: session.phone_number,
+        phone_number: sessionPhone,
         telegram_chat_id: ctx.chat.id,
       });
     } else {
       await ctx.reply(`
 ❌ Wrong phone number
 
-You entered ${session.phone_number} on the website,
+You entered ${sessionPhone} on the website,
 but your Telegram number is ${telegramPhone}.
 
 Please use the correct number.
@@ -73,7 +91,6 @@ Please use the correct number.
     return;
   }
 
-  // Ask for phone number
   await ctx.reply(
     `To verify your phone number, please share it with the bot.\n\n` +
     `Tap the button below and confirm.`,
@@ -87,9 +104,9 @@ Please use the correct number.
   );
 });
 
-// Handle when user shares contact
 bot.on('contact', async (ctx) => {
-  const telegramPhone = ctx.message.contact?.phone_number;
+  const telegramPhoneRaw = ctx.message.contact?.phone_number;
+  const telegramPhone = normalizePhone(telegramPhoneRaw);
 
   if (!telegramPhone) {
     return ctx.reply('Could not read your phone number. Please try again.');
@@ -107,7 +124,9 @@ bot.on('contact', async (ctx) => {
     return ctx.reply('No active verification found. Please start again from the website.');
   }
 
-  if (telegramPhone === session.phone_number) {
+  const sessionPhone = normalizePhone(session.phone_number);
+
+  if (telegramPhone === sessionPhone) {
     await ctx.reply(`
 ✅ Phone number verified!
 
@@ -121,19 +140,19 @@ You can return to the website — it will redirect automatically.
       .update({ 
         status: 'success',
         verified: true,
-        chat_id: ctx.chat.id   // ← matches your local bot.ts
+        chat_id: ctx.chat.id
       })
       .eq('id', session.id);
 
     await supabase.from('users').upsert({
-      phone_number: session.phone_number,
+      phone_number: sessionPhone,
       telegram_chat_id: ctx.chat.id,
     });
   } else {
     await ctx.reply(`
 ❌ Wrong phone number
 
-You entered ${session.phone_number} on the website,
+You entered ${sessionPhone} on the website,
 but your Telegram number is ${telegramPhone}.
 
 Please use the correct number.
