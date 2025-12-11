@@ -7,9 +7,11 @@ export default function Home() {
   const [message, setMessage] = useState('');
   const [step, setStep] = useState<'input' | 'waiting'>('input');
   const [loading, setLoading] = useState(false);
+  const [deepLink, setDeepLink] = useState<string | null>(null); // store the link
 
   const handleSubmit = async () => {
     setMessage('');
+    setDeepLink(null);
     setLoading(true);
 
     try {
@@ -27,12 +29,15 @@ export default function Home() {
         return;
       }
 
-      setMessage('OTP sent! Check your Telegram for the 6-digit code.');
+      setMessage('Telegram should open automatically with your code!');
+      setDeepLink(data.deepLink); // save the link
       setStep('waiting');
       setLoading(false);
 
+      // Open Telegram (works on mobile & desktop)
       if (data.deepLink) {
-        window.open(data.deepLink, '_blank');
+        // This opens the app on phones and Telegram Desktop/web on computers
+        window.open(data.deepLink, '_blank', 'noopener,noreferrer');
       }
     } catch {
       setMessage('Network error. Please check your connection.');
@@ -76,17 +81,29 @@ export default function Home() {
               </button>
             </div>
 
-            {message && (
-              <p className="text-center text-red-500 mt-3">{message}</p>
-            )}
+            {message && <p className="text-center text-red-500 mt-3">{message}</p>}
           </>
         ) : (
           <div className="text-center space-y-6">
             <div className="bg-green-50 border border-green-200 p-6 rounded-xl shadow-sm">
-              <p className="text-green-700 font-medium">{message}</p>
+              <p className="text-green-700 font-medium text-lg">{message}</p>
             </div>
 
-            <p className="text-gray-600">Enter the 6-digit code in the next page</p>
+            {deepLink && (
+              <div className="text-sm text-gray-600">
+                If Telegram didn’t open automatically,{' '}
+                <a
+                  href={deepLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-indigo-600 font-medium underline hover:text-indigo-800"
+                >
+                  tap here
+                </a>
+              </div>
+            )}
+
+            <p className="text-gray-600">Enter the 6-digit code you received in Telegram</p>
 
             <a
               href="/verify"
