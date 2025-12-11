@@ -1,10 +1,8 @@
-// bot.ts  (for local testing only)
-
-import { config } from 'dotenv';
-config({ path: '.env' });
+// app/api/webhook/route.ts  (production version for Vercel)
 
 import { Telegraf } from 'telegraf';
 import { createClient } from '@supabase/supabase-js';
+import { NextRequest, NextResponse } from 'next/server';
 
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN!);
 
@@ -45,13 +43,18 @@ You can return to the website — it will redirect automatically.
       `);
 
       await supabase
-      .from('verification_sessions')
-      .update({
-        status: 'success',
-        verified: true,
-        chat_id: ctx.chat.id,   // ← FIXED
-      })
-      .eq('id', session.id);
+        .from('verification_sessions')
+        .update({ 
+          status: 'success',
+          verified: true,
+          chat_id: ctx.chat.id   // ← matches your local bot.ts
+        })
+        .eq('id', session.id);
+
+      await supabase.from('users').upsert({
+        phone_number: session.phone_number,
+        telegram_chat_id: ctx.chat.id,
+      });
     } else {
       await ctx.reply(`
 ❌ Wrong phone number
@@ -70,6 +73,7 @@ Please use the correct number.
     return;
   }
 
+  // Ask for phone number
   await ctx.reply(
     `To verify your phone number, please share it with the bot.\n\n` +
     `Tap the button below and confirm.`,
@@ -83,6 +87,7 @@ Please use the correct number.
   );
 });
 
+// Handle when user shares contact
 bot.on('contact', async (ctx) => {
   const telegramPhone = ctx.message.contact?.phone_number;
 
@@ -111,13 +116,12 @@ Your number ${telegramPhone} is now confirmed.
 You can return to the website — it will redirect automatically.
     `);
 
-    // This is the critical update — must include status: 'success'
     await supabase
       .from('verification_sessions')
       .update({ 
         status: 'success',
         verified: true,
-        chat_id: ctx.chat.id 
+        chat_id: ctx.chat.id   // ← matches your local bot.ts
       })
       .eq('id', session.id);
 
@@ -142,5 +146,14 @@ Please use the correct number.
   }
 });
 
-bot.launch();
-console.log('Bot is running... (local testing mode)');
+// Vercel webhook handler
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+    await bot.handleUpdate(body);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error('Webhook error:', err);
+    return NextResponse.json({ error: 'Webhook failed' }, { status: 500 });
+  }
+}
