@@ -29,7 +29,7 @@ export default function Home() {
         return;
       }
 
-      setMessage('Telegram should open automatically with your code!');
+      setMessage('OTP sent! Check your Telegram for the 6-digit code.');
       setDeepLink(data.deepLink); // save the link
       setStep('waiting');
       setLoading(false);
