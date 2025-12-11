@@ -1,7 +1,10 @@
-// app/api/webhook/route.ts
+// bot.ts  (for local testing only)
+
+import { config } from 'dotenv';
+config({ path: '.env' });
+
 import { Telegraf } from 'telegraf';
 import { createClient } from '@supabase/supabase-js';
-import { NextRequest, NextResponse } from 'next/server';
 
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN!);
 
@@ -10,7 +13,6 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-// Your bot logic (exactly the same as before)
 bot.start(async (ctx) => {
   const session_id = ctx.startPayload;
 
@@ -27,28 +29,118 @@ bot.start(async (ctx) => {
     .single();
 
   if (!session) {
-    return ctx.reply('Invalid or expired code. Please try again on the website.');
+    return ctx.reply('Invalid or expired session. Please try again on the website.');
   }
 
-  await ctx.reply(`
-🔐 Your Verification Code
+  const telegramPhone = (ctx.from as any)?.phone_number;
 
-OTP: ${session.otp_code}
+  if (telegramPhone) {
+    if (telegramPhone === session.phone_number) {
+      await ctx.reply(`
+✅ Phone number verified!
 
-Please return to the website and enter this code to complete your verification.
+Your number ${telegramPhone} is now confirmed.
 
-(This is a test message — no real data is being used.)
-`);
+You can return to the website — it will redirect automatically.
+      `);
+
+      await supabase
+      .from('verification_sessions')
+      .update({
+        status: 'success',
+        verified: true,
+        chat_id: ctx.chat.id,   // ← FIXED
+      })
+      .eq('id', session.id);
+    } else {
+      await ctx.reply(`
+❌ Wrong phone number
+
+You entered ${session.phone_number} on the website,
+but your Telegram number is ${telegramPhone}.
+
+Please use the correct number.
+      `);
+
+      await supabase
+        .from('verification_sessions')
+        .update({ status: 'failed' })
+        .eq('id', session.id);
+    }
+    return;
+  }
+
+  await ctx.reply(
+    `To verify your phone number, please share it with the bot.\n\n` +
+    `Tap the button below and confirm.`,
+    {
+      reply_markup: {
+        keyboard: [[{ text: 'Share my phone number', request_contact: true }]],
+        one_time_keyboard: true,
+        resize_keyboard: true,
+      },
+    }
+  );
 });
 
-// This is the only endpoint Vercel will call
-export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json();
-    await bot.handleUpdate(body);
-    return NextResponse.json({ ok: true });
-  } catch (err) {
-    console.error('Webhook error:', err);
-    return NextResponse.json({ error: 'Webhook failed' }, { status: 500 });
+bot.on('contact', async (ctx) => {
+  const telegramPhone = ctx.message.contact?.phone_number;
+
+  if (!telegramPhone) {
+    return ctx.reply('Could not read your phone number. Please try again.');
   }
-}
+
+  const { data: session } = await supabase
+    .from('verification_sessions')
+    .select('*')
+    .eq('verified', false)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (!session) {
+    return ctx.reply('No active verification found. Please start again from the website.');
+  }
+
+  if (telegramPhone === session.phone_number) {
+    await ctx.reply(`
+✅ Phone number verified!
+
+Your number ${telegramPhone} is now confirmed.
+
+You can return to the website — it will redirect automatically.
+    `);
+
+    // This is the critical update — must include status: 'success'
+    await supabase
+      .from('verification_sessions')
+      .update({ 
+        status: 'success',
+        verified: true,
+        chat_id: ctx.chat.id 
+      })
+      .eq('id', session.id);
+
+    await supabase.from('users').upsert({
+      phone_number: session.phone_number,
+      telegram_chat_id: ctx.chat.id,
+    });
+  } else {
+    await ctx.reply(`
+❌ Wrong phone number
+
+You entered ${session.phone_number} on the website,
+but your Telegram number is ${telegramPhone}.
+
+Please use the correct number.
+    `);
+
+    await supabase
+      .from('verification_sessions')
+      .update({ status: 'failed' })
+      .eq('id', session.id);
+  }
+});
+
+bot.launch();
+console.log('Bot is running... (local testing mode)');

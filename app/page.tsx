@@ -1,13 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function Home() {
   const [phone, setPhone] = useState('');
   const [message, setMessage] = useState('');
   const [step, setStep] = useState<'input' | 'waiting'>('input');
   const [loading, setLoading] = useState(false);
-  const [deepLink, setDeepLink] = useState<string | null>(null); // store the link
+  const [deepLink, setDeepLink] = useState<string | null>(null);
+  const router = useRouter();
 
   const handleSubmit = async () => {
     setMessage('');
@@ -24,19 +26,17 @@ export default function Home() {
       const data = await res.json();
 
       if (!res.ok || data.error) {
-        setMessage(data.error || 'Something went wrong. Please try again.');
+        setMessage(data.error || 'Something went wrong.');
         setLoading(false);
         return;
       }
 
-      setMessage('OTP sent! Check your Telegram for the 6-digit code.');
-      setDeepLink(data.deepLink); // save the link
+      setMessage('Telegram should open automatically — please share your phone number.');
+      setDeepLink(data.deepLink);
       setStep('waiting');
       setLoading(false);
 
-      // Open Telegram (works on mobile & desktop)
       if (data.deepLink) {
-        // This opens the app on phones and Telegram Desktop/web on computers
         window.open(data.deepLink, '_blank', 'noopener,noreferrer');
       }
     } catch {
@@ -44,6 +44,44 @@ export default function Home() {
       setLoading(false);
     }
   };
+
+  // Poll to check if verified
+  useEffect(() => {
+    if (step === 'waiting') {
+      // Start polling after a small delay (give bot time to set status)
+      const timer = setTimeout(() => {
+        const interval = setInterval(async () => {
+          // Clean phone exactly the same way as backend
+          let cleaned = phone.trim().replace(/[\s\-\(\)\+]/g, '');
+
+          if (cleaned.startsWith('0') && cleaned.length === 10) {
+            cleaned = '+855' + cleaned.slice(1);
+          } else if (cleaned.startsWith('855') && cleaned.length === 12) {
+            cleaned = '+' + cleaned;
+          }
+
+          const res = await fetch('/api/check-verification', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone_number: cleaned }),
+          });
+
+          const data = await res.json();
+
+          if (data.status === 'success') {
+            clearInterval(interval);
+            router.push('/home');
+          } else if (data.status === 'failed') {
+            clearInterval(interval);
+            setMessage('Verification failed. Please try again.');
+            setStep('input');
+          }
+        }, 3000); // check every 3 seconds
+      }, 4000); // wait 4 seconds before starting
+
+      return () => clearTimeout(timer);
+    }
+  }, [step, phone, router]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-100 via-white to-purple-100 flex items-center justify-center p-6">
@@ -77,7 +115,7 @@ export default function Home() {
                 disabled={loading}
                 className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-xl transition shadow-md disabled:opacity-50"
               >
-                {loading ? 'Sending...' : 'Send OTP via Telegram'}
+                {loading ? 'Sending...' : 'Verify with Telegram'}
               </button>
             </div>
 
@@ -87,30 +125,19 @@ export default function Home() {
           <div className="text-center space-y-6">
             <div className="bg-green-50 border border-green-200 p-6 rounded-xl shadow-sm">
               <p className="text-green-700 font-medium text-lg">{message}</p>
+              <p className="text-gray-600 mt-3">
+                Waiting for verification... (you will be redirected automatically)
+              </p>
             </div>
 
             {deepLink && (
               <div className="text-sm text-gray-600">
-                If Telegram didn’t open automatically,{' '}
-                <a
-                  href={deepLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-indigo-600 font-medium underline hover:text-indigo-800"
-                >
+                If Telegram didn’t open,{' '}
+                <a href={deepLink} target="_blank" className="text-indigo-600 underline">
                   tap here
                 </a>
               </div>
             )}
-
-            <p className="text-gray-600">Enter the 6-digit code you received in Telegram. This code will expire in 5 minutes.</p>
-
-            <a
-              href="/verify"
-              className="block w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-xl transition shadow-md"
-            >
-              Go to Verification
-            </a>
           </div>
         )}
       </div>
