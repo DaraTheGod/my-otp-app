@@ -6,22 +6,32 @@ import { useRouter } from 'next/navigation';
 export default function Verify() {
   const [otp, setOtp] = useState('');
   const [message, setMessage] = useState('');
+  const [loading, setLoading] = useState(false);
   const router = useRouter();
 
   const handleVerify = async () => {
-    const res = await fetch('/api/verify-otp', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ otp }),
-    });
+    setMessage('');
+    setLoading(true);
 
-    const data = await res.json();
+    try {
+      const res = await fetch('/api/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ otp }),
+      });
 
-    if (data.success) {
-      setMessage(`Success! Your phone ${data.phone} is verified.`);
-      router.push('/home');
-    } else {
-      setMessage(data.error || 'Invalid or expired code');
+      const data = await res.json();
+
+      if (data.success) {
+        setMessage(`Success! Your phone ${data.phone} is verified.`);
+        setTimeout(() => router.push('/home'), 1500); // small delay to show success
+      } else {
+        setMessage(data.error || 'Something went wrong. Please try again.');
+      }
+    } catch {
+      setMessage('Network error. Please check your connection.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -34,19 +44,28 @@ export default function Verify() {
           type="text"
           maxLength={6}
           value={otp}
-          onChange={(e) => setOtp(e.target.value)}
+          onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))} // only numbers
           placeholder="••••••"
           className="w-full px-4 py-3 border text-gray-800 border-gray-300 rounded-xl text-center text-3xl tracking-widest focus:ring-2 focus:ring-indigo-500 transition"
         />
 
         <button
           onClick={handleVerify}
-          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 font-semibold rounded-xl shadow-md"
+          disabled={loading}
+          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 font-semibold rounded-xl shadow-md disabled:opacity-50"
         >
-          Verify
+          {loading ? 'Verifying...' : 'Verify'}
         </button>
 
-        {message && <p className="text-center text-red-500">{message}</p>}
+        {message && (
+          <p
+            className={`text-center text-lg ${
+              message.includes('Success') ? 'text-green-600' : 'text-red-600'
+            }`}
+          >
+            {message}
+          </p>
+        )}
       </div>
     </div>
   );

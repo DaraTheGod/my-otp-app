@@ -103,7 +103,7 @@ export default function Home() {
               </div>
             )}
 
-            <p className="text-gray-600">Enter the 6-digit code you received in Telegram</p>
+            <p className="text-gray-600">Enter the 6-digit code you received in Telegram. This code will expire in 5 minutes.</p>
 
             <a
               href="/verify"
